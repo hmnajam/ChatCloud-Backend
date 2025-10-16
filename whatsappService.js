@@ -1,28 +1,38 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const qrcode = require('qrcode-terminal');
-const pino = require('pino');
+import { Boom } from '@hapi/boom';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, Browsers } from '@whiskeysockets/baileys';
+import pino from 'pino';
+import readline from 'readline';
 
 let sock;
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     sock = makeWASocket({
         auth: state,
-        // Add browser and logger config to make connection more authentic
         browser: Browsers.macOS('Desktop'),
         logger: pino({ level: 'info' }),
+        shouldSyncHistoryMessage: () => false,
+        printQRInTerminal: false, // v7 uses pairing code, not QR
     });
 
+    // Handle pairing code
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = await question('Please enter your mobile phone number (e.g., 1234567890): ');
+        const code = await sock.requestPairingCode(phoneNumber);
+        console.log(`Your pairing code is: ${code}`);
+        console.log('Please enter this code in WhatsApp on your mobile phone (Settings > Linked Devices > Link a Device > Link with phone number).');
+    }
+
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr) {
-            console.log('QR code received, please scan:');
-            qrcode.generate(qr, { small: true });
-        }
-
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) && lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut;
             console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
@@ -31,6 +41,7 @@ async function connectToWhatsApp() {
             }
         } else if (connection === 'open') {
             console.log('opened connection');
+            rl.close(); // Close readline interface after successful connection
         }
     });
 
@@ -53,4 +64,4 @@ async function sendMessage(to, text) {
     }
 }
 
-module.exports = { connectToWhatsApp, sendMessage };
+export { connectToWhatsApp, sendMessage };
