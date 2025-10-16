@@ -1,6 +1,7 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
+const pino = require('pino');
 
 let sock;
 
@@ -9,7 +10,9 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
         auth: state,
-        // printQRInTerminal: true, // Deprecated
+        // Add browser and logger config to make connection more authentic
+        browser: Browsers.macOS('Desktop'),
+        logger: pino({ level: 'silent' }),
     });
 
     sock.ev.on('connection.update', (update) => {
