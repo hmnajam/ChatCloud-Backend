@@ -12,7 +12,7 @@ async function connectToWhatsApp() {
         auth: state,
         // Add browser and logger config to make connection more authentic
         browser: Browsers.macOS('Desktop'),
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'info' }),
     });
 
     sock.ev.on('connection.update', (update) => {
