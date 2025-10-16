@@ -47,7 +47,8 @@ async function startServer() {
             console.log('Make sure to include your API key in the "x-api-key" header.');
         });
     } catch (err) {
-        console.error("Failed to connect to WhatsApp and start server", err);
+        console.error("Failed to start server due to connection error:", err);
+        process.exit(1); // Exit if connection fails
     }
 }
 
