@@ -31,28 +31,39 @@ app.use('/api/messages', apiKeyMiddleware, messageRoutes);
 
 // Function to automatically reconnect existing sessions on startup
 async function reconnectExistingSessions() {
+    console.log('Scanning for existing sessions...');
     const authDir = 'auth_info_baileys';
     try {
         const clientDirs = await readdir(authDir, { withFileTypes: true });
+        const reconnectPromises = [];
+
         for (const clientDir of clientDirs) {
             if (clientDir.isDirectory()) {
                 const clientId = clientDir.name;
                 console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
-                try {
-                    // Pass the isReconnect flag to prevent interactive prompts
-                    await createSession(clientId, { isReconnect: true });
-                } catch (error) {
-                    console.error(`[${clientId}] Failed to reconnect session:`, error);
-                }
+                // Pass the isReconnect flag to prevent interactive prompts
+                reconnectPromises.push(
+                    createSession(clientId, { isReconnect: true }).catch(error => {
+                        console.error(`[${clientId}] Failed to reconnect session:`, error);
+                    })
+                );
             }
         }
+
+        if (reconnectPromises.length === 0) {
+            console.log('No existing session directories found.');
+        } else {
+            await Promise.all(reconnectPromises);
+        }
+
     } catch (error) {
         if (error.code === 'ENOENT') {
-            console.log('No existing sessions found in auth_info_baileys. Ready for new clients.');
+            console.log('Auth directory not found. Ready for new clients.');
         } else {
             console.error('Error reading auth directory:', error);
         }
     }
+    console.log('Finished scanning for existing sessions.');
 }
 
 // Start the server and then reconnect sessions
