@@ -1,11 +1,11 @@
-# WhatsApp API Backend
+# WhatsApp Multi-Client API Backend
 
-This project is a simple Node.js backend that uses `@whiskeysockets/baileys` (v7) to send WhatsApp messages through a secure API endpoint.
+This project is a Node.js backend that uses `@whiskeysockets/baileys` (v7) to manage multiple WhatsApp accounts and send messages through a secure API.
 
 ## Prerequisites
 
 - Node.js (v18 or higher recommended)
-- A WhatsApp account
+- A WhatsApp account for each client you wish to connect.
 
 ## 1. Installation
 
@@ -19,88 +19,81 @@ npm install
 
 ## 2. Configuration
 
-The application requires environment variables to run. Create a `.env` file in the root of the project by copying the example file:
+Create a `.env` file in the root of the project by copying the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Now, open the `.env` file and set the following variables:
+Now, open the `.env` file and set your `API_KEY`. The `PORT` is optional and defaults to 3000.
 
-- `PORT`: The port on which the server will run (e.g., 3000).
-- `API_KEY`: A secret key of your choice to protect the API endpoint.
+## 3. How It Works
 
-## 3. First Run & Authentication (Pairing Code)
+This application can manage multiple WhatsApp accounts simultaneously. Each account is identified by a unique `clientId`.
 
-This application uses the new **Pairing Code** method to connect to your WhatsApp account. The old QR code method is no longer supported by the library.
+- **On Startup:** The server will automatically scan for existing session folders in `auth_info_baileys/` and attempt to reconnect them non-interactively.
+- **API Endpoints:** You use a simple REST API to create new clients, view their status, delete them, and send messages.
 
-Run the server for the first time:
+---
 
-```bash
-node index.js
-```
+## 4. API Usage
 
-The application will prompt you to enter your mobile phone number in the terminal:
-```
-Please enter your mobile phone number (e.g., 1234567890):
-```
+All endpoints require an `x-api-key` header with the `API_KEY` from your `.env` file.
 
-1.  Enter your full phone number, including the country code, but without any `+` or spaces (e.g., `1234567890`).
-2.  The application will then generate an 8-character pairing code and display it in the terminal:
-    ```
-    Your pairing code is: ABC-DEFG
-    ```
-3.  Open WhatsApp on your phone, go to **Settings > Linked Devices**, and tap **"Link a Device"**.
-4.  Select the option to **"Link with phone number instead"**.
-5.  Enter the 8-character code from your terminal.
+### Create a New Client
 
-Once the connection is successful, a session file will be created in the `auth_info_baileys` directory. On subsequent runs, the application will use this session file to log in automatically, so you only need to complete the pairing process once.
+This will start the interactive pairing process for a new WhatsApp account.
 
-The server will then start, and you will see a message indicating it is ready to accept requests.
-
-## 4. Sending a Message
-
-To send a message, make a `POST` request to the `/api/send-message` endpoint.
-
-- **Header:** `x-api-key: your-secret-api-key`
+- **Endpoint:** `POST /api/clients`
 - **Body (JSON):**
   ```json
   {
-    "to": "1234567890",
-    "text": "Hello from my API!"
+    "clientId": "your-unique-client-id"
   }
   ```
-  *(Replace `1234567890` with the recipient's phone number, including the country code.)*
+  *(e.g., "client-1", "work-phone", etc.)*
 
-### Example `curl` command:
+**After sending this request:**
+1.  Look at the terminal where the Node.js application is running.
+2.  It will prompt you to enter the phone number for this new client.
+3.  After you enter the number, it will generate an 8-character **pairing code**.
+4.  On your mobile phone, open WhatsApp, go to **Settings > Linked Devices > Link a Device**, and choose **"Link with phone number instead"**.
+5.  Enter the pairing code to complete the setup.
 
-```bash
-curl -X POST \
-  http://localhost:3000/api/send-message \
-  -H 'Content-Type: application/json' \
-  -H 'x-api-key: your-secret-api-key' \
-  -d '{
-    "to": "1234567890",
-    "text": "Hello from the API!"
-  }'
-```
+### List All Clients
 
-### API Responses
+This shows all connected clients and their current status (`CONNECTING`, `SYNCING`, `READY`, `CLOSED`).
 
-- **Success (200 OK):**
+- **Endpoint:** `GET /api/clients`
+- **Example Response:**
+  ```json
+  [
+    {
+      "clientId": "client-1",
+      "state": "READY",
+      "pairingCode": null
+    }
+  ]
+  ```
+
+### Delete a Client
+
+This will log out the specified client and delete its session files.
+
+- **Endpoint:** `DELETE /api/clients/:clientId`
+- **Example:** `DELETE /api/clients/client-1`
+
+### Send a Message
+
+- **Endpoint:** `POST /api/messages/send`
+- **Body (JSON):**
   ```json
   {
-    "success": true,
-    "message": "Message sent successfully."
+    "clientId": "client-1",
+    "to": "1234567890",
+    "text": "Hello from my multi-client API!"
   }
   ```
-- **Service Not Ready (503 Service Unavailable):**
-  If the WhatsApp client is still initializing, you will receive this error. Please wait a few moments and try your request again.
-  ```json
-  {
-    "error": "Service Unavailable: WhatsApp client is not ready.",
-    "currentState": "CONNECTING"
-  }
-  ```
-- **Other Errors (4xx/5xx):**
-  Standard HTTP error codes will be returned for issues like a missing API key, bad request body, or internal server errors.
+  *(Replace `clientId` and `to` with the appropriate values.)*
+
+**Important:** You can only send messages from clients that are in the `READY` state. If the client is still connecting or syncing, you will receive a `503 Service Unavailable` error. Just wait a few moments and try again.

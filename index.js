@@ -39,7 +39,8 @@ async function reconnectExistingSessions() {
                 const clientId = clientDir.name;
                 console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
                 try {
-                    await createSession(clientId);
+                    // Pass the isReconnect flag to prevent interactive prompts
+                    await createSession(clientId, { isReconnect: true });
                 } catch (error) {
                     console.error(`[${clientId}] Failed to reconnect session:`, error);
                 }

@@ -5,16 +5,16 @@ import readline from 'readline';
 
 const sessions = new Map();
 
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
+async function createSession(clientId, options = {}) {
+    const { isReconnect = false } = options;
 
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-
-async function createSession(clientId) {
     if (sessions.has(clientId)) {
-        throw new Error('Session for this client already exists.');
+        // If it's a reconnect attempt, it might already exist from a failed previous attempt
+        if (isReconnect) {
+            console.log(`[${clientId}] Session already in map, likely from a failed reconnect. Overwriting.`);
+        } else {
+            throw new Error('Session for this client already exists.');
+        }
     }
 
     console.log(`[${clientId}] Creating new session...`);
@@ -30,20 +30,26 @@ async function createSession(clientId) {
         console.log(`[${clientId}] State changed to: ${newState}`);
     };
 
-    session.sock = await connectToWhatsApp(clientId, onStateChange);
+    try {
+        session.sock = await connectToWhatsApp(clientId, onStateChange);
 
-    // Handle pairing code logic for the new session
-    if (!session.sock.authState.creds.registered) {
-        const phoneNumber = await question(`[${clientId}] Please enter your mobile phone number (e.g., 1234567890): `);
-        try {
-            const code = await session.sock.requestPairingCode(phoneNumber);
-            session.pairingCode = code;
-            console.log(`[${clientId}] Your pairing code is: ${code}`);
-        } catch (error) {
-            console.error(`[${clientId}] Failed to request pairing code:`, error);
-            sessions.delete(clientId); // Clean up failed session
-            throw error;
+        // Handle pairing code logic only for new, non-reconnect sessions
+        if (!isReconnect && !session.sock.authState.creds.registered) {
+            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+            try {
+                const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+                const phoneNumber = await question(`[${clientId}] Please enter your mobile phone number (e.g., 1234567890): `);
+                const code = await session.sock.requestPairingCode(phoneNumber);
+                session.pairingCode = code;
+                console.log(`[${clientId}] Your pairing code is: ${code}`);
+            } finally {
+                rl.close();
+            }
         }
+    } catch (error) {
+        console.error(`[${clientId}] Failed to create session:`, error);
+        sessions.delete(clientId); // Clean up failed session
+        throw error;
     }
 }
 
