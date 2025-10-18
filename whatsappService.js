@@ -44,6 +44,16 @@ async function connectToWhatsApp(clientId, onStateChange) {
         if (connection === 'open') {
             console.log(`[${clientId}] Connection opened, now syncing history...`);
             onStateChange(ReadinessState.SYNCING);
+            // Set a timeout to pragmatically move to READY state if history sync takes too long
+            const readinessTimeout = setTimeout(() => {
+                console.log(`[${clientId}] Syncing timed out after 60 seconds. Assuming client is ready.`);
+                onStateChange(ReadinessState.READY);
+            }, 60000); // 60-second timeout
+
+            // Clear the timeout if history sync finishes properly
+            sock.ev.once('messaging-history.set', () => {
+                clearTimeout(readinessTimeout);
+            });
         } else if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) && lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut;
             console.log(`[${clientId}] Connection closed due to `, lastDisconnect.error, ', reconnecting ', shouldReconnect);
