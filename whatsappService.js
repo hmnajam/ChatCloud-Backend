@@ -35,6 +35,7 @@ async function connectToWhatsApp(clientId, onStateChange) {
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
         },
         printQRInTerminal: false,
+        syncFullHistory: false, // Disable full history sync
     });
 
     sock.ev.on('connection.update', async (update) => {
