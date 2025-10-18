@@ -51,9 +51,12 @@ async function connectToWhatsApp(clientId, onStateChange) {
             }, 60000); // 60-second timeout
 
             // Clear the timeout if history sync finishes properly
-            sock.ev.once('messaging-history.set', () => {
+            const historyListener = () => {
                 clearTimeout(readinessTimeout);
-            });
+                // Remove the listener itself after it has run
+                sock.ev.off('messaging-history.set', historyListener);
+            };
+            sock.ev.on('messaging-history.set', historyListener);
         } else if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) && lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut;
             console.log(`[${clientId}] Connection closed due to `, lastDisconnect.error, ', reconnecting ', shouldReconnect);
