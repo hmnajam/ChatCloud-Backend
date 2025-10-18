@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { readdir } from 'fs/promises';
 import path from 'path';
-import { createSession } from './sessionManager.js';
+import { reconnectSession } from './sessionManager.js';
 import clientRoutes from './clientRoutes.js';
 import messageRoutes from './messageRoutes.js';
 
@@ -40,11 +40,10 @@ async function reconnectExistingSessions() {
         for (const clientDir of clientDirs) {
             if (clientDir.isDirectory()) {
                 const clientId = clientDir.name;
-                console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
-                // Pass the isReconnect flag to prevent interactive prompts
+                // No need to log here as reconnectSession will do it
                 reconnectPromises.push(
-                    createSession(clientId, { isReconnect: true }).catch(error => {
-                        console.error(`[${clientId}] Failed to reconnect session:`, error);
+                    reconnectSession(clientId).catch(error => {
+                        // The error is already logged in reconnectSession, so we just catch to prevent unhandled rejection
                     })
                 );
             }

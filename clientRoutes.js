@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createSession, deleteSession, getSession, listSessions } from './sessionManager.js';
+import { createNewSession, deleteSession, getSession, listSessions } from './sessionManager.js';
 
 const router = Router();
 
@@ -11,7 +11,7 @@ router.post('/', async (req, res) => {
     }
 
     try {
-        await createSession(clientId);
+        await createNewSession(clientId);
         // The pairing code needs to be retrieved from the console where the app is running
         res.status(201).json({ message: `Session created for ${clientId}. Please check the console for the pairing code.` });
     } catch (error) {
