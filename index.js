@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import express from 'express';
-import { connectToWhatsApp, sendMessage, getReadinessState, ReadinessState } from './whatsappService.js';
+import { readdir } from 'fs/promises';
+import path from 'path';
+import { createSession } from './sessionManager.js';
+import clientRoutes from './clientRoutes.js';
+import messageRoutes from './messageRoutes.js';
 
 const app = express();
 app.use(express.json());
@@ -17,45 +21,41 @@ const apiKeyMiddleware = (req, res, next) => {
     next();
 };
 
-// Robust readiness check middleware using the state machine
-const readinessMiddleware = (req, res, next) => {
-    const currentState = getReadinessState();
-    if (currentState === ReadinessState.READY) {
-        return next();
-    }
-    res.status(503).json({
-        error: 'Service Unavailable: WhatsApp client is not ready.',
-        currentState: currentState
-    });
-};
-
 app.get('/', (req, res) => {
-    res.send('WhatsApp API Backend is running!');
+    res.send('WhatsApp Multi-Client API Backend is running!');
 });
 
-app.post('/api/send-message', apiKeyMiddleware, readinessMiddleware, async (req, res) => {
-    const { to, text } = req.body;
+// Use the new routers with API key protection
+app.use('/api/clients', apiKeyMiddleware, clientRoutes);
+app.use('/api/messages', apiKeyMiddleware, messageRoutes);
 
-    if (!to || !text) {
-        return res.status(400).json({ error: 'Bad Request: "to" and "text" fields are required.' });
-    }
-
+// Function to automatically reconnect existing sessions on startup
+async function reconnectExistingSessions() {
+    const authDir = 'auth_info_baileys';
     try {
-        const result = await sendMessage(to, text);
-        res.status(200).json(result);
+        const clientDirs = await readdir(authDir, { withFileTypes: true });
+        for (const clientDir of clientDirs) {
+            if (clientDir.isDirectory()) {
+                const clientId = clientDir.name;
+                console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
+                try {
+                    await createSession(clientId);
+                } catch (error) {
+                    console.error(`[${clientId}] Failed to reconnect session:`, error);
+                }
+            }
+        }
     } catch (error) {
-        console.error('Error in /api/send-message:', error);
-        res.status(500).json({ error: 'Failed to send message.' });
+        if (error.code === 'ENOENT') {
+            console.log('No existing sessions found in auth_info_baileys. Ready for new clients.');
+        } else {
+            console.error('Error reading auth directory:', error);
+        }
     }
-});
+}
 
-// Start the server immediately
+// Start the server and then reconnect sessions
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log('API is ready to accept requests, but WhatsApp client may still be initializing.');
-});
-
-// Initiate WhatsApp connection in the background
-connectToWhatsApp().catch(err => {
-    console.error("Fatal error during WhatsApp connection:", err);
+    reconnectExistingSessions();
 });
