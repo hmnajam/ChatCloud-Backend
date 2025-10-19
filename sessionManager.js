@@ -35,8 +35,6 @@ export async function startSession(clientId) {
     sessions.set(clientId, session);
 
     const authPath = path.join('auth_info_baileys', clientId);
-    const authPath = path.join('auth_info_baileys', clientId);
-
     // Check if session data exists
     let isNewSession = false;
     try {
