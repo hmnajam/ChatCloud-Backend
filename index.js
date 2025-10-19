@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { readdir } from 'fs/promises';
-import path from 'path';
-import { reconnectSession } from './sessionManager.js';
+import { startSession, getSession, ReadinessState } from './sessionManager.js';
 import clientRoutes from './clientRoutes.js';
 import messageRoutes from './messageRoutes.js';
 
@@ -25,7 +24,7 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Multi-Client API Backend is running!');
 });
 
-// Use the new routers with API key protection
+// Use the routers with API key protection
 app.use('/api/clients', apiKeyMiddleware, clientRoutes);
 app.use('/api/messages', apiKeyMiddleware, messageRoutes);
 
@@ -40,10 +39,10 @@ async function reconnectExistingSessions() {
         for (const clientDir of clientDirs) {
             if (clientDir.isDirectory()) {
                 const clientId = clientDir.name;
-                // No need to log here as reconnectSession will do it
+                console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
                 reconnectPromises.push(
-                    reconnectSession(clientId).catch(error => {
-                        // The error is already logged in reconnectSession, so we just catch to prevent unhandled rejection
+                    startSession(clientId).catch(error => {
+                        console.error(`[${clientId}] Failed to reconnect session on startup:`, error);
                     })
                 );
             }

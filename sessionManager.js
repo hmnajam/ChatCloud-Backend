@@ -7,21 +7,40 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
-import { rm } from 'fs/promises';
+import { rm, stat } from 'fs/promises';
 import readline from 'readline';
 
 const sessions = new Map();
 
-// A helper function to create a socket connection. This will be used by both new sessions and reconnections.
-async function createSocket(clientId, onStateChange) {
+export const ReadinessState = {
+    CONNECTING: 'CONNECTING',
+    SYNCING: 'SYNCING',
+    READY: 'READY',
+    CLOSED: 'CLOSED'
+};
+
+// A single, intelligent function to start a session.
+// It will check if a session exists to determine if it's a reconnect or a new pairing.
+export async function startSession(clientId) {
+    if (sessions.has(clientId)) {
+        console.log(`[${clientId}] Session already exists, skipping...`);
+        return;
+    }
+
+    const session = {
+        sock: null,
+        state: ReadinessState.CONNECTING,
+        pairingCode: null,
+    };
+    sessions.set(clientId, session);
+
     const authPath = path.join('auth_info_baileys', clientId);
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`[${clientId}] using WA v${version.join('.')}, isLatest: ${isLatest}`);
+    const { version } = await fetchLatestBaileysVersion();
 
-    onStateChange(ReadinessState.CONNECTING);
+    console.log(`[${clientId}] using WA v${version.join('.')}`);
 
-    const sock = makeWASocket({
+    session.sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         auth: {
@@ -33,145 +52,80 @@ async function createSocket(clientId, onStateChange) {
     });
 
     let readinessTimeout;
-    sock.ev.on('connection.update', async (update) => {
+
+    const handleConnectionUpdate = async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'open') {
-            console.log(`[${clientId}] Connection opened, now syncing history...`);
-            onStateChange(ReadinessState.SYNCING);
+            session.state = ReadinessState.SYNCING;
+            console.log(`[${clientId}] Connection opened, syncing history...`);
             readinessTimeout = setTimeout(() => {
-                console.log(`[${clientId}] Syncing timed out after 60 seconds. Assuming client is ready.`);
-                onStateChange(ReadinessState.READY);
+                if (session.state === ReadinessState.SYNCING) {
+                    console.log(`[${clientId}] Syncing timed out after 60s. Assuming ready.`);
+                    session.state = ReadinessState.READY;
+                }
             }, 60000);
         } else if (connection === 'close') {
             clearTimeout(readinessTimeout);
-            onStateChange(ReadinessState.CLOSED);
+            session.state = ReadinessState.CLOSED;
             const shouldReconnect = (lastDisconnect.error instanceof Boom) && lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut;
-            console.log(`[${clientId}] Connection closed due to `, lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            console.log(`[${clientId}] Connection closed. Should reconnect: ${shouldReconnect}`);
+
+            sessions.delete(clientId); // Clean up failed session
+
             if (shouldReconnect) {
-                reconnectSession(clientId); // Attempt to reconnect
+                console.log(`[${clientId}] Reconnecting...`);
+                setTimeout(() => startSession(clientId), 5000); // Retry after 5s
             }
         }
-    });
+    };
 
-    sock.ev.on('messaging-history.set', () => {
+    // This is the crucial logic change.
+    // We only ask for a pairing code if the user doesn't have credentials saved.
+    // On a reconnect, the `creds.registered` will be true, and this block will be skipped.
+    if (!session.sock.authState.creds.registered) {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        try {
+            const question = (text) => new Promise(resolve => rl.question(text, resolve));
+            const phoneNumber = await question(`[${clientId}] Enter phone number for new session: `);
+            session.pairingCode = await session.sock.requestPairingCode(phoneNumber);
+            console.log(`[${clientId}] Pairing Code: ${session.pairingCode}`);
+        } catch (error) {
+            console.error(`[${clientId}] Pairing code request failed:`, error);
+            sessions.delete(clientId); // Clean up on failure
+        } finally {
+            rl.close();
+        }
+    }
+
+    session.sock.ev.on('connection.update', handleConnectionUpdate);
+    session.sock.ev.on('creds.update', saveCreds);
+    session.sock.ev.on('messaging-history.set', () => {
         clearTimeout(readinessTimeout);
+        session.state = ReadinessState.READY;
         console.log(`[${clientId}] History sync complete. Client is ready.`);
-        onStateChange(ReadinessState.READY);
     });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    return sock;
 }
 
-// Function to create a new session INTERACTIVELY
-async function createNewSession(clientId) {
-    if (sessions.has(clientId)) {
-        throw new Error('Session for this client already exists.');
-    }
-
-    const session = { sock: null, state: ReadinessState.CONNECTING, pairingCode: null };
-    sessions.set(clientId, session);
-
-    const onStateChange = (newState) => {
-        session.state = newState;
-        console.log(`[${clientId}] State changed to: ${newState}`);
-    };
-
-    try {
-        session.sock = await createSocket(clientId, onStateChange);
-
-        if (!session.sock.authState.creds.registered) {
-            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-            try {
-                const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-                const phoneNumber = await question(`[${clientId}] Please enter your mobile phone number (e.g., 1234567890): `);
-                const code = await session.sock.requestPairingCode(phoneNumber);
-                session.pairingCode = code;
-                console.log(`[${clientId}] Your pairing code is: ${code}`);
-            } finally {
-                rl.close();
-            }
-        }
-    } catch (error) {
-        console.error(`[${clientId}] Failed to create new session:`, error);
-        sessions.delete(clientId);
-        throw error;
-    }
-}
-
-// Function to reconnect an existing session NON-INTERACTIVELY
-async function reconnectSession(clientId) {
-    if (sessions.has(clientId)) {
-        console.log(`[${clientId}] Session already in map. Skipping reconnect.`);
-        return;
-    }
-
-    const session = { sock: null, state: ReadinessState.CONNECTING, pairingCode: null };
-    sessions.set(clientId, session);
-
-    const onStateChange = (newState) => {
-        session.state = newState;
-        console.log(`[${clientId}] State changed to: ${newState}`);
-    };
-
-    try {
-        session.sock = await createSocket(clientId, onStateChange);
-    } catch (error) {
-        console.error(`[${clientId}] Failed to reconnect session:`, error);
-        sessions.delete(clientId);
-    }
-}
-
-function getSession(clientId) {
+export function getSession(clientId) {
     return sessions.get(clientId);
 }
 
-async function deleteSession(clientId) {
+export async function deleteSession(clientId) {
     const session = sessions.get(clientId);
-    if (!session) {
-        throw new Error('Session not found.');
-    }
+    if (!session) throw new Error('Session not found');
 
-    try {
-        await session.sock.logout();
-    } catch (error) {
-        console.error(`[${clientId}] Error during logout:`, error);
-    }
-
-    if (session.sock && session.sock.ws.readyState === 1) {
-        session.sock.ws.close();
-    }
-
+    await session.sock.logout();
     sessions.delete(clientId);
 
     const authPath = path.join('auth_info_baileys', clientId);
-    try {
-        await rm(authPath, { recursive: true, force: true });
-        console.log(`[${clientId}] Session data deleted.`);
-    } catch (error) {
-        console.error(`[${clientId}] Error deleting session data:`, error);
-    }
+    await rm(authPath, { recursive: true, force: true });
 }
 
-function listSessions() {
-    const sessionList = [];
-    for (const [clientId, session] of sessions.entries()) {
-        sessionList.push({
-            clientId,
-            state: session.state,
-            pairingCode: session.pairingCode
-        });
-    }
-    return sessionList;
+export function listSessions() {
+    return Array.from(sessions.entries()).map(([clientId, session]) => ({
+        clientId,
+        state: session.state,
+        pairingCode: session.pairingCode,
+    }));
 }
-
-export const ReadinessState = {
-    CONNECTING: 'CONNECTING',
-    SYNCING: 'SYNCING',
-    READY: 'READY',
-    CLOSED: 'CLOSED'
-};
-
-export { createNewSession, reconnectSession, getSession, deleteSession, listSessions };
