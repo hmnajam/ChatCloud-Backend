@@ -7,7 +7,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import path from 'path';
-import { rm, stat } from 'fs/promises';
+import { rm, stat, access } from 'fs/promises';
 import readline from 'readline';
 
 const sessions = new Map();
@@ -35,6 +35,17 @@ export async function startSession(clientId) {
     sessions.set(clientId, session);
 
     const authPath = path.join('auth_info_baileys', clientId);
+    const authPath = path.join('auth_info_baileys', clientId);
+
+    // Check if session data exists
+    let isNewSession = false;
+    try {
+        await access(path.join(authPath, 'creds.json'));
+    } catch (error) {
+        isNewSession = true;
+        console.log(`[${clientId}] No existing credentials found. This is a new session.`);
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -47,7 +58,7 @@ export async function startSession(clientId) {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
         },
-        printQRInTerminal: false,
+        printQRInTerminal: isNewSession, // Only print QR for new sessions
         syncFullHistory: false,
     });
 
@@ -80,10 +91,8 @@ export async function startSession(clientId) {
         }
     };
 
-    // This is the crucial logic change.
-    // We only ask for a pairing code if the user doesn't have credentials saved.
-    // On a reconnect, the `creds.registered` will be true, and this block will be skipped.
-    if (!session.sock.authState.creds.registered) {
+    // Only ask for pairing code if it's a new session (creds.json doesn't exist)
+    if (isNewSession) {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         try {
             const question = (text) => new Promise(resolve => rl.question(text, resolve));
