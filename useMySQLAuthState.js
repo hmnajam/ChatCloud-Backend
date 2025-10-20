@@ -70,10 +70,7 @@ export async function useMySQLAuthState(clientId) {
                     const data = {};
                     await Promise.all(
                         ids.map(async (id) => {
-                            let value = await readData(`${type}-${id}`);
-                            if (type === 'app-state-sync-key' && value) {
-                                value = proto.Message.AppStateSyncKeyData.fromObject(value);
-                            }
+                            const value = await readData(`${type}-${id}`);
                             data[id] = value;
                         })
                     );
