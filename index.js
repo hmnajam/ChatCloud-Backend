@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { readdir } from 'fs/promises';
-import { startSession, getSession, ReadinessState } from './sessionManager.js';
+import { initDatabase } from './db.js';
+import pool from './db.js';
+import { startSession } from './sessionManager.js';
 import clientRoutes from './clientRoutes.js';
 import messageRoutes from './messageRoutes.js';
 
@@ -30,42 +31,42 @@ app.use('/api/messages', apiKeyMiddleware, messageRoutes);
 
 // Function to automatically reconnect existing sessions on startup
 async function reconnectExistingSessions() {
-    console.log('Scanning for existing sessions...');
-    const authDir = 'auth_info_baileys';
+    console.log('Scanning for existing sessions in the database...');
     try {
-        const clientDirs = await readdir(authDir, { withFileTypes: true });
-        const reconnectPromises = [];
-
-        for (const clientDir of clientDirs) {
-            if (clientDir.isDirectory()) {
-                const clientId = clientDir.name;
-                console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
-                reconnectPromises.push(
-                    startSession(clientId).catch(error => {
-                        console.error(`[${clientId}] Failed to reconnect session on startup:`, error);
-                    })
-                );
-            }
+        const [rows] = await pool.query('SELECT DISTINCT clientId FROM baileys_auth_store;');
+        if (rows.length === 0) {
+            console.log('No existing sessions found in the database.');
+            return;
         }
 
-        if (reconnectPromises.length === 0) {
-            console.log('No existing session directories found.');
-        } else {
-            await Promise.all(reconnectPromises);
-        }
+        const reconnectPromises = rows.map(row => {
+            const clientId = row.clientId;
+            console.log(`[${clientId}] Found existing session. Attempting to reconnect...`);
+            return startSession(clientId).catch(error => {
+                console.error(`[${clientId}] Failed to reconnect session on startup:`, error);
+            });
+        });
+
+        await Promise.all(reconnectPromises);
+        console.log('Finished reconnecting sessions.');
 
     } catch (error) {
-        if (error.code === 'ENOENT') {
-            console.log('Auth directory not found. Ready for new clients.');
-        } else {
-            console.error('Error reading auth directory:', error);
-        }
+        console.error('Error querying for existing sessions:', error);
     }
-    console.log('Finished scanning for existing sessions.');
 }
 
-// Start the server and then reconnect sessions
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    reconnectExistingSessions();
-});
+// Main function to initialize and start the server
+async function startServer() {
+    try {
+        await initDatabase();
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+            reconnectExistingSessions();
+        });
+    } catch (error) {
+        console.error('Failed to start the server:', error);
+        process.exit(1); // Exit if the database connection fails
+    }
+}
+
+startServer();

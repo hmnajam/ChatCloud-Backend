@@ -1,14 +1,13 @@
 import { Boom } from '@hapi/boom';
 import makeWASocket, {
-    useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
     makeCacheableSignalKeyStore
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import path from 'path';
-import { rm, stat, access } from 'fs/promises';
 import readline from 'readline';
+import { useMySQLAuthState } from './useMySQLAuthState.js';
+import pool, { deleteSessionFromDB } from './db.js';
 
 const sessions = new Map();
 
@@ -20,7 +19,6 @@ export const ReadinessState = {
 };
 
 // A single, intelligent function to start a session.
-// It will check if a session exists to determine if it's a reconnect or a new pairing.
 export async function startSession(clientId) {
     if (sessions.has(clientId)) {
         console.log(`[${clientId}] Session already exists, skipping...`);
@@ -34,19 +32,15 @@ export async function startSession(clientId) {
     };
     sessions.set(clientId, session);
 
-    const authPath = path.join('auth_info_baileys', clientId);
-    // Check if session data exists
-    let isNewSession = false;
-    try {
-        await access(path.join(authPath, 'creds.json'));
-    } catch (error) {
-        isNewSession = true;
-        console.log(`[${clientId}] No existing credentials found. This is a new session.`);
+    // Check if session data exists in the database
+    const { state, saveCreds } = await useMySQLAuthState(clientId);
+    const isNewSession = !state.creds.registered;
+
+    if (isNewSession) {
+        console.log(`[${clientId}] No existing credentials found in DB. This is a new session.`);
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
-
     console.log(`[${clientId}] using WA v${version.join('.')}`);
 
     session.sock = makeWASocket({
@@ -56,7 +50,7 @@ export async function startSession(clientId) {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
         },
-        printQRInTerminal: isNewSession, // Only print QR for new sessions
+        printQRInTerminal: false, // QR is not needed for pairing code flow
         syncFullHistory: false,
     });
 
@@ -80,16 +74,18 @@ export async function startSession(clientId) {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) && lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut;
             console.log(`[${clientId}] Connection closed. Should reconnect: ${shouldReconnect}`);
 
-            sessions.delete(clientId); // Clean up failed session
+            sessions.delete(clientId);
 
             if (shouldReconnect) {
                 console.log(`[${clientId}] Reconnecting...`);
-                setTimeout(() => startSession(clientId), 5000); // Retry after 5s
+                setTimeout(() => startSession(clientId), 5000);
+            } else {
+                 await deleteSessionFromDB(clientId);
+                 console.log(`[${clientId}] Session logged out, data deleted from DB.`);
             }
         }
     };
 
-    // Only ask for pairing code if it's a new session (creds.json doesn't exist)
     if (isNewSession) {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         try {
@@ -99,7 +95,7 @@ export async function startSession(clientId) {
             console.log(`[${clientId}] Pairing Code: ${session.pairingCode}`);
         } catch (error) {
             console.error(`[${clientId}] Pairing code request failed:`, error);
-            sessions.delete(clientId); // Clean up on failure
+            sessions.delete(clientId);
         } finally {
             rl.close();
         }
@@ -122,11 +118,14 @@ export async function deleteSession(clientId) {
     const session = sessions.get(clientId);
     if (!session) throw new Error('Session not found');
 
-    await session.sock.logout();
-    sessions.delete(clientId);
-
-    const authPath = path.join('auth_info_baileys', clientId);
-    await rm(authPath, { recursive: true, force: true });
+    try {
+        await session.sock.logout();
+    } catch (error) {
+        console.error(`[${clientId}] Error during logout:`, error);
+    } finally {
+        sessions.delete(clientId);
+        await deleteSessionFromDB(clientId); // This already handles DB deletion
+    }
 }
 
 export function listSessions() {
