@@ -1,13 +1,12 @@
 import { Boom } from '@hapi/boom';
 import makeWASocket, {
     DisconnectReason,
-    fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore
+    fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import readline from 'readline';
 import { useMySQLAuthState } from './useMySQLAuthState.js';
-import pool, { deleteSessionFromDB } from './db.js';
+import { deleteSessionFromDB } from './db.js';
 
 const sessions = new Map();
 
@@ -48,9 +47,9 @@ export async function startSession(clientId) {
         logger: pino({ level: 'silent' }),
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+            keys: state.keys, // Use the keys directly from our custom store
         },
-        printQRInTerminal: false, // QR is not needed for pairing code flow
+        printQRInTerminal: false,
         syncFullHistory: false,
     });
 
@@ -124,7 +123,7 @@ export async function deleteSession(clientId) {
         console.error(`[${clientId}] Error during logout:`, error);
     } finally {
         sessions.delete(clientId);
-        await deleteSessionFromDB(clientId); // This already handles DB deletion
+        await deleteSessionFromDB(clientId);
     }
 }
 
