@@ -121,4 +121,24 @@ This will log out the specified client and delete its session data from the data
   ```
   *(Replace `clientId` with the ID of a connected client and `to` with the recipient's phone number.)*
 
+#### Send a Media Message (Image, Video, or Document)
+
+- **Endpoint:** `POST /api/messages/send-media`
+- **Body (`multipart/form-data`):**
+  - `clientId` (text): The ID of the client to send from.
+  - `to` (text): The recipient's phone number.
+  - `caption` (text, optional): A text caption for the media.
+  - `file` (file): The media file to upload and send.
+
+- **`curl` Example:**
+  ```bash
+  curl -X POST \
+    http://localhost:3000/api/messages/send-media \
+    -H "x-api-key: your-secret-api-key" \
+    -F "clientId=client-1" \
+    -F "to=1234567890" \
+    -F "caption=Here is our new brochure!" \
+    -F "file=@/path/to/your/brochure.pdf"
+  ```
+
 **Important:** You can only send messages from clients that are in the `READY` state. If the client is still connecting or syncing, you will receive a `503 Service Unavailable` error. Wait a few moments for the client to become ready and try again.
