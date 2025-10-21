@@ -39,7 +39,12 @@ export async function useMySQLAuthState(clientId) {
         }
     };
 
-    const creds = await readData('creds') || initAuthCreds();
+    let creds = await readData('creds');
+    if (!creds) {
+        creds = initAuthCreds();
+        // Save the initialized credentials to the database
+        await writeData('creds', creds);
+    }
 
     return {
         state: {
