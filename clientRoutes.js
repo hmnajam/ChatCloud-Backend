@@ -11,12 +11,10 @@ router.post('/', async (req, res) => {
     }
 
     try {
-        await startSession(clientId, phoneNumber);
-        const session = getSession(clientId);
-        // The pairing code will be available on the session object if it's a new session
+        const pairingCode = await startSession(clientId, phoneNumber);
         res.status(201).json({
             message: `Session creation initiated for ${clientId}. If this is a new client, the pairing code will be returned.`,
-            pairingCode: session ? session.pairingCode : null
+            pairingCode: pairingCode
         });
     } catch (error) {
         console.error(`[${clientId}] Error creating session:`, error);
