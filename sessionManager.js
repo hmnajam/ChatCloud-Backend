@@ -71,7 +71,9 @@ export async function startSession(clientId, phoneNumber) {
 
             if (shouldReconnect) {
                 console.log(`[${clientId}] Reconnecting...`);
-                setTimeout(() => startSession(clientId), 5000);
+                setTimeout(() => {
+                    startSession(clientId).catch(err => console.error(`[${clientId}] Error during automatic reconnection:`, err));
+                }, 5000);
             } else {
                  await deleteSessionFromDB(clientId);
                  console.log(`[${clientId}] Session logged out, data deleted from DB.`);
@@ -80,10 +82,14 @@ export async function startSession(clientId, phoneNumber) {
     };
 
     if (isNewSession) {
+        // Only require a phone number if it's a new session being created via API
         if (!phoneNumber) {
-            console.error(`[${clientId}] Phone number is required for a new session.`);
+            // This case should ideally not be hit during automatic reconnection,
+            // as `isNewSession` would be false. But as a safeguard:
+            const err = new Error('Phone number is required for a new session.');
+            console.error(`[${clientId}] Error:`, err.message);
             sessions.delete(clientId);
-            throw new Error('Phone number is required for a new session.');
+            throw err;
         }
 
         try {
