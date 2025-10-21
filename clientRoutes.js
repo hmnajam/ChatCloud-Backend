@@ -5,17 +5,17 @@ const router = Router();
 
 // Create a new client session
 router.post('/', async (req, res) => {
-    const { clientId } = req.body;
+    const { clientId, phoneNumber } = req.body;
     if (!clientId) {
         return res.status(400).json({ error: 'clientId is required.' });
     }
 
     try {
-        await startSession(clientId);
+        await startSession(clientId, phoneNumber);
         const session = getSession(clientId);
         // The pairing code will be available on the session object if it's a new session
         res.status(201).json({
-            message: `Session creation initiated for ${clientId}. Please check the console for pairing code if this is a new client.`,
+            message: `Session creation initiated for ${clientId}. If this is a new client, the pairing code will be returned.`,
             pairingCode: session ? session.pairingCode : null
         });
     } catch (error) {

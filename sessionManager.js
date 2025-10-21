@@ -4,7 +4,6 @@ import makeWASocket, {
     fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import readline from 'readline';
 import { useMySQLAuthState } from './useMySQLAuthState.js';
 import { deleteSessionFromDB } from './db.js';
 
@@ -17,7 +16,7 @@ export const ReadinessState = {
     CLOSED: 'CLOSED'
 };
 
-export async function startSession(clientId) {
+export async function startSession(clientId, phoneNumber) {
     if (sessions.has(clientId)) {
         console.log(`[${clientId}] Session already exists, skipping...`);
         return;
@@ -81,17 +80,19 @@ export async function startSession(clientId) {
     };
 
     if (isNewSession) {
-        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        if (!phoneNumber) {
+            console.error(`[${clientId}] Phone number is required for a new session.`);
+            sessions.delete(clientId);
+            throw new Error('Phone number is required for a new session.');
+        }
+
         try {
-            const question = (text) => new Promise(resolve => rl.question(text, resolve));
-            const phoneNumber = await question(`[${clientId}] Enter phone number for new session: `);
             session.pairingCode = await session.sock.requestPairingCode(phoneNumber);
             console.log(`[${clientId}] Pairing Code: ${session.pairingCode}`);
         } catch (error) {
             console.error(`[${clientId}] Pairing code request failed:`, error);
             sessions.delete(clientId);
-        } finally {
-            rl.close();
+            throw error; // Re-throw to be caught by the route handler
         }
     }
 
