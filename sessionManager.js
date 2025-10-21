@@ -69,7 +69,9 @@ export function startSession(clientId, phoneNumber) {
                     try {
                         const code = await session.sock.requestPairingCode(phoneNumber);
                         session.pairingCode = code;
-                        console.log(`[${clientId}] Pairing Code: ${code}`);
+                        console.log('----------------------------------------------------------------');
+                        console.log(`[${clientId}] Your Pairing Code: ${code}`);
+                        console.log('----------------------------------------------------------------');
                         resolve(code); // Resolve the promise with the pairing code
                     } catch (error) {
                         console.error(`[${clientId}] Pairing code request failed:`, error);
