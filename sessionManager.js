@@ -49,6 +49,7 @@ export function startSession(clientId, phoneNumber) {
         session.sock = makeWASocket({
             version,
             logger: pino({ level: 'silent' }),
+            browser: [ 'ChatCloud', 'Ubuntu', '22.04' ],
             auth: state,
             printQRInTerminal: false,
             syncFullHistory: false,
