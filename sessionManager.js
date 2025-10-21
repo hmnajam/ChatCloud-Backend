@@ -17,7 +17,6 @@ export const ReadinessState = {
     CLOSED: 'CLOSED'
 };
 
-// A single, intelligent function to start a session.
 export async function startSession(clientId) {
     if (sessions.has(clientId)) {
         console.log(`[${clientId}] Session already exists, skipping...`);
@@ -31,7 +30,6 @@ export async function startSession(clientId) {
     };
     sessions.set(clientId, session);
 
-    // Check if session data exists in the database
     const { state, saveCreds } = await useMySQLAuthState(clientId);
     const isNewSession = !state.creds.registered;
 
@@ -45,10 +43,7 @@ export async function startSession(clientId) {
     session.sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        auth: {
-            creds: state.creds,
-            keys: state.keys, // Use the keys directly from our custom store
-        },
+        auth: state, // Pass the whole state object directly
         printQRInTerminal: false,
         syncFullHistory: false,
     });

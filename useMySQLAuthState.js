@@ -1,4 +1,4 @@
-import { BufferJSON, initAuthCreds } from '@whiskeysockets/baileys';
+import { proto, BufferJSON, initAuthCreds } from '@whiskeysockets/baileys';
 import pool from './db.js';
 
 export async function useMySQLAuthState(clientId) {
@@ -49,7 +49,10 @@ export async function useMySQLAuthState(clientId) {
                     const data = { };
                     await Promise.all(
                         ids.map(async id => {
-                            const value = await readData(`${type}-${id}`);
+                            let value = await readData(`${type}-${id}`);
+                            if(type === 'app-state-sync-key' && value) {
+                                value = proto.Message.AppStateSyncKeyData.fromPartial(value);
+                            }
                             data[id] = value;
                         })
                     );
