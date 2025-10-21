@@ -54,12 +54,14 @@ export function startSession(clientId, phoneNumber) {
             syncFullHistory: false,
         });
 
+        let connectionTimeout;
         let readinessTimeout;
 
         const handleConnectionUpdate = async (update) => {
             const { connection, lastDisconnect } = update;
 
             if (connection === 'open') {
+                clearTimeout(connectionTimeout); // Clear the timeout on successful connection
                 session.state = ReadinessState.SYNCING;
                 console.log(`[${clientId}] Connection opened, syncing history...`);
 
@@ -107,6 +109,17 @@ export function startSession(clientId, phoneNumber) {
 
         session.sock.ev.on('connection.update', handleConnectionUpdate);
         session.sock.ev.on('creds.update', saveCreds);
+
+        // Set a timeout for the initial connection
+        connectionTimeout = setTimeout(() => {
+            if (session.state === ReadinessState.CONNECTING) {
+                console.error(`[${clientId}] Connection timed out after 30s.`);
+                session.sock.end(new Error('Connection timed out')); // Gracefully close the socket
+                sessions.delete(clientId);
+                reject(new Error('Connection timed out'));
+            }
+        }, 30000);
+
         session.sock.ev.on('messaging-history.set', () => {
             clearTimeout(readinessTimeout);
             session.state = ReadinessState.READY;
