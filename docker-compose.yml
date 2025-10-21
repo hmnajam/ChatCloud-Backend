@@ -1,0 +1,17 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: whatsapp_api_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootstartsfromseed
+      MYSQL_DATABASE: whatsapp_api
+      MYSQL_USER: api_user
+      MYSQL_PASSWORD: its@11@boutperspective
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
