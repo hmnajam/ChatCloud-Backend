@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/hmnajam/ChatCloud-Backend#readme",
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.5",
+    "@whiskeysockets/baileys": "^7.0.0-rc.6",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "multer": "^2.0.2",

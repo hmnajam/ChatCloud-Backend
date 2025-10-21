@@ -48,7 +48,7 @@ export function startSession(clientId, phoneNumber) {
 
         session.sock = makeWASocket({
             version,
-            logger: pino({ level: 'trace' }),
+            logger: pino({ level: 'silent' }),
             auth: state,
             printQRInTerminal: false,
             syncFullHistory: false,
