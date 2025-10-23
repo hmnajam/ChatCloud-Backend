@@ -1,9 +1,73 @@
-import makeWASocket, { fetchLatestBaileysVersion, DisconnectReason, useMemoryAuthState } from '@whiskeysockets/baileys'
-import pino from 'pino'
-import readline from 'readline'
+import makeWASocket, {
+    fetchLatestBaileysVersion,
+    DisconnectReason,
+    initAuthCreds,
+    BufferJSON,
+    proto
+} from '@whiskeysockets/baileys';
+import pino from 'pino';
+import readline from 'readline';
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-const question = (text) => new Promise(resolve => rl.question(text, resolve))
+// This is a simplified in-memory authentication state helper,
+// based on the structure required by Baileys.
+const useInMemoryAuthState = () => {
+    const creds = initAuthCreds();
+    const keys = {};
+
+    const saveCreds = () => {
+        // In a real app, you would save the creds to a file or database.
+        // For this test, we do nothing as it's ephemeral.
+    };
+
+    const readData = (key) => {
+        return keys[key] || null;
+    }
+
+    const writeData = (key, value) => {
+        keys[key] = value;
+    }
+
+    const removeData = (key) => {
+        delete keys[key];
+    }
+
+    return {
+        state: {
+            creds,
+            keys: {
+                get: async (type, ids) => {
+                    const data = {};
+                    ids.forEach(id => {
+                        let value = readData(`${type}-${id}`);
+                        if (type === 'app-state-sync-key' && value) {
+                            value = proto.Message.AppStateSyncKeyData.fromPartial(value);
+                        }
+                        data[id] = value;
+                    });
+                    return data;
+                },
+                set: async (data) => {
+                    for (const category in data) {
+                        for (const id in data[category]) {
+                            const value = data[category][id];
+                            const key = `${category}-${id}`;
+                            if (value) {
+                                writeData(key, value);
+                            } else {
+                                removeData(key);
+                            }
+                        }
+                    }
+                },
+            },
+        },
+        saveCreds,
+    };
+};
+
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const question = (text) => new Promise(resolve => rl.question(text, resolve));
 
 async function runTest() {
     console.log('--- Starting Standalone Pairing Code Test ---');
@@ -18,7 +82,7 @@ async function runTest() {
     const { version } = await fetchLatestBaileysVersion();
     console.log(`Using Baileys version: ${version.join('.')}`);
 
-    const { state, saveCreds } = await useMemoryAuthState();
+    const { state, saveCreds } = useInMemoryAuthState();
 
     const sock = makeWASocket({
         version,
@@ -27,6 +91,8 @@ async function runTest() {
         auth: state,
         browser: [ 'Chrome', 'Desktop', '112.0.5615.49' ],
     });
+
+    sock.ev.on('creds.update', saveCreds);
 
     let connectionTimeout = setTimeout(() => {
         console.error('--> TEST FAILED: Connection timed out after 30 seconds.');
