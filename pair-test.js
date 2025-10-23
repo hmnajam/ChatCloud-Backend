@@ -1,4 +1,4 @@
-import makeWASocket, { fetchLatestBaileysVersion, DisconnectReason } from '@whiskeysockets/baileys'
+import makeWASocket, { fetchLatestBaileysVersion, DisconnectReason, useMemoryAuthState } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import readline from 'readline'
 
@@ -18,11 +18,13 @@ async function runTest() {
     const { version } = await fetchLatestBaileysVersion();
     console.log(`Using Baileys version: ${version.join('.')}`);
 
+    const { state, saveCreds } = await useMemoryAuthState();
+
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'trace' }), // Use trace for max verbosity
         printQRInTerminal: false,
-        auth: undefined, // Use ephemeral auth state for this test
+        auth: state,
         browser: [ 'Chrome', 'Desktop', '112.0.5615.49' ],
     });
 
