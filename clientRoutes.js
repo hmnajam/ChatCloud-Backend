@@ -5,11 +5,14 @@ const router = Router();
 
 // Create a new client session
 router.post('/', async (req, res) => {
-    const { clientId } = req.body;
-    if (!clientId) {
-        return res.status(400).json({ error: 'clientId is required.' });
-    }
+  const { clientId, phoneNumber } = req.body;
+    console.log(clientId, phoneNumber);
 
+  if (!clientId || !phoneNumber) {
+    return res.status(400).json({
+      error: !clientId ? "clientId is required." : "phoneNumber is required.",
+    });
+  }
     try {
         await startSession(clientId);
         const session = getSession(clientId);
@@ -23,6 +26,15 @@ router.post('/', async (req, res) => {
         res.status(500).json({ error: 'Failed to create session.', details: error.message });
     }
 });
+
+
+
+    // const pairingCode = await startSession(clientId, phoneNumber);
+    // res.status(201).json({
+    //   message: `Session creation initiated for ${clientId}. If this is a new client, the pairing code will be returned.`,
+    //   pairingCode: pairingCode,
+    // });
+
 
 // Get all client sessions and their status
 router.get('/', (req, res) => {
